@@ -6,6 +6,7 @@ import org.apache.spark.sql.expressions.Window._
 import org.apache.spark.sql.functions._    /*important pour dataframe */
 import org.apache.spark.sql.catalyst.plans._    /*important pour jointure dataframe */
 import org.apache.spark.storage.StorageLevel
+import org.apache.hadoop.fs._
 
 
 /*import java.util.logging.LogManager
@@ -45,7 +46,7 @@ object SparkBigData {
       .option("header", "true")
       .option("inferSchema", "true")
       .load("C:\\Users\\Alex\\Documents\\Fichier 2021\\FomaBigData\\Source\\DataFrame\\csvs\\")
-    //def_gp.show(7)
+     //def_gp.show(7)
 
     val def_gp2 = session_s.read
       .format("csv")
@@ -142,17 +143,62 @@ object SparkBigData {
         col("PRODUCTGROUPCODE"),
         col("zipcode"),
         col("PRODUCTGROUPNAME"),
+        //col("periode_secondes"),
         col("state"),
         col("Ventes_dep").alias("Ventes_par_departement")
       )
-      //.show(10)
 
-        df_window.repartition(1)
+    def_oderok.withColumn("date_lecture", date_format(current_date(),"dd/MMMM/YY hh:mm:ss"))
+      .withColumn("date_lecture_compl", current_timestamp())
+      .withColumn("periode_secondes", window(col("orderdate"),"5 days"))
+      .select(
+        col("periode_secondes"),
+        col("periode_secondes.start"),
+        col("periode_secondes.end")
+      ).show(10)
+
+
+    //df_prod.printSchema()
+     // df_order.show(10)
+
+        /*df_window.repartition(1)
           .write
           .format("com.databricks.spark.csv")
          .mode(SaveMode.Overwrite)
           .option("header", "true")
           .csv("C:\\Users\\Alex\\Documents\\Fichier 2021\\FomaBigData\\Source\\DataFrame\\Ecriture")
+
+         */
+
+  }
+  def spark_hdfs(): Unit = {
+    val config_fs = Session_Spark(true).sparkContext.hadoopConfiguration
+    val fs = FileSystem.get(config_fs)
+
+    val src_path = new Path("user/datalake/marketing/")
+    val dest_path = new Path("user/datalake/indexes")
+    val ren_src = new Path("user/datalake/marketing/fichier_reporting.piquet")
+    val dest_src = new Path("user/datalake/marketing/reporting.piquet")
+    val local_path = new Path("C:\\Users\\Alex\\Documents\\Fichier 2021\\FomaBigData\\Source\\DataFrame\\Ecriture\\part.csv")
+    val path_local = new Path("C:\\Users\\Alex\\Documents\\Fichier 2021\\FomaBigData\\Source\\DataFrame")
+   //lecture d'un fichier
+    val files_list = fs.listStatus(src_path)
+     files_list.foreach(f => println(f.getPath))
+
+    val files_list1 = fs.listStatus(src_path).map(x => x.getPath)
+    for( i <- 1 to files_list1.length) {
+       println(files_list1(i))
+    }
+ //renommage du fichier
+    fs.rename(ren_src, dest_src)
+
+    //suppression des fichiers
+    fs.delete(dest_src,true)
+    //copiage des fichiers
+
+    fs.copyFromLocalFile(local_path,dest_path)
+    fs.copyToLocalFile(dest_path,path_local)
+
   }
 
 
