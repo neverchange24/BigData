@@ -6,6 +6,8 @@ import org.apache.spark.sql.expressions.Window._
 import org.apache.spark.sql.functions._    /*important pour dataframe */
 import org.apache.spark.sql.catalyst.plans._    /*important pour jointure dataframe */
 import org.apache.spark.storage.StorageLevel
+import org.apache.hadoop.fs._
+import org.apache.spark.sql.expressions.UserDefinedFunction
 
 
 /*import java.util.logging.LogManager
@@ -45,7 +47,7 @@ object SparkBigData {
       .option("header", "true")
       .option("inferSchema", "true")
       .load("C:\\Users\\Alex\\Documents\\Fichier 2021\\FomaBigData\\Source\\DataFrame\\csvs\\")
-    //def_gp.show(7)
+     //def_gp.show(7)
 
     val def_gp2 = session_s.read
       .format("csv")
@@ -142,23 +144,103 @@ object SparkBigData {
         col("PRODUCTGROUPCODE"),
         col("zipcode"),
         col("PRODUCTGROUPNAME"),
+        //col("periode_secondes"),
         col("state"),
         col("Ventes_dep").alias("Ventes_par_departement")
       )
-      //.show(10)
 
-        df_window.repartition(1)
+    def_oderok.withColumn("date_lecture", date_format(current_date(),"dd/MMMM/YY hh:mm:ss"))
+      .withColumn("date_lecture_compl", current_timestamp())
+      .withColumn("periode_secondes", window(col("orderdate"),"5 days"))
+      .select(
+        col("periode_secondes"),
+        col("periode_secondes.start"),
+        col("periode_secondes.end")
+      )
+
+      df_union.withColumn("InvoiceDate", to_date(col("InvoiceDate")))
+        .withColumn("InvoiceTimestamp", col("InvoiceTimestamp").cast(TimestampType))
+        .withColumn("Invoice_add_2moth", add_months(col("InvoiceDate"),2))
+        .withColumn("Invoice_add_date", date_add(col("InvoiceDate"),30))
+        .withColumn("Invoice_sub_date", date_sub(col("InvoiceDate"),20))
+        .withColumn("Invoice_diff_date", datediff(current_date(),col("InvoiceDate")))
+        .withColumn("Invoice_quarter", quarter(col("InvoiceDate")))
+        .withColumn("InvoiceDate_id",unix_timestamp(col("InvoiceDate")))
+        .withColumn("InvoiceDate_format",from_unixtime(unix_timestamp(col("InvoiceDate")),"dd/MMMM/yyyy"))
+        //.show(10)
+
+
+    df_prod.withColumn("productGB", substring(col("PRODUCTGROUPNAME"),4,4))
+      .withColumn("productln", length(col("PRODUCTGROUPNAME")))
+      .withColumn("concat_product", concat_ws("|", col("PRODUCTID"),col("INSTOCKFLAG")))
+      .withColumn("PRODUCTGROUPCODEMIN", lower(col("PRODUCTGROUPCODE")))
+      .where(regexp_extract(trim(col("PRODUCTID")),exp="[0-9]{5}",0 )===trim(col("PRODUCTID")))
+      .where(!col("PRODUCTID").rlike("[0-9]{5}"))
+     .show(10)
+
+    import session_s.implicits._
+    val phone_list: DataFrame = List("0789857418","+339878125","0789214312").toDF("phone_number")
+     phone_list
+       .withColumn("test_phone", valid_phoneUDF(col("phone_number")))
+       .show()
+
+
+        /*df_window.repartition(1)
           .write
           .format("com.databricks.spark.csv")
          .mode(SaveMode.Overwrite)
           .option("header", "true")
-          .csv("C:\\Users\\Alex\\Documents\\Fichier 2021\\FomaBigData\\Source\\DataFrame\\Ecriture")
+          .csv("C:\\Users\\Alex\\Documents\\Fichier 2021\\FomaBigData\\Source\\DataFrame\\Ecriture") */
+  }
+  def valid_phone(phone_to_test: String): Boolean ={
+   var result: Boolean = false
+    val motif_regexp = "^0[0-9]{10}".r
+
+    if(motif_regexp.findAllIn(phone_to_test.trim) == phone_to_test.trim) {
+      result = true
+    }
+    else {
+      result = false
+    }
+    return result
+      }
+  val valid_phoneUDF : UserDefinedFunction = udf{(phone_to_test: String) => valid_phone(phone_to_test: String) }
+
+
+  def spark_hdfs(): Unit = {
+    val config_fs = Session_Spark(true).sparkContext.hadoopConfiguration
+    val fs = FileSystem.get(config_fs)
+
+    val src_path = new Path("user/datalake/marketing/")
+    val dest_path = new Path("user/datalake/indexes")
+    val ren_src = new Path("user/datalake/marketing/fichier_reporting.piquet")
+    val dest_src = new Path("user/datalake/marketing/reporting.piquet")
+    val local_path = new Path("C:\\Users\\Alex\\Documents\\Fichier 2021\\FomaBigData\\Source\\DataFrame\\Ecriture\\part.csv")
+    val path_local = new Path("C:\\Users\\Alex\\Documents\\Fichier 2021\\FomaBigData\\Source\\DataFrame")
+   //lecture d'un fichier
+    val files_list = fs.listStatus(src_path)
+     files_list.foreach(f => println(f.getPath))
+
+    val files_list1 = fs.listStatus(src_path).map(x => x.getPath)
+    for( i <- 1 to files_list1.length) {
+       println(files_list1(i))
+    }
+ //renommage du fichier
+    fs.rename(ren_src, dest_src)
+
+    //suppression des fichiers
+    fs.delete(dest_src,true)
+    //copiage des fichiers
+
+    fs.copyFromLocalFile(local_path,dest_path)
+    fs.copyToLocalFile(dest_path,path_local)
+
   }
 
 
 //desc_nulls_first()
 
-  def mainip_rdd() : Unit = {
+   def mainip_rdd() : Unit = {
     val session_s = Session_Spark(true)
     val sc = session_s.sparkContext
 
@@ -246,7 +328,7 @@ object SparkBigData {
         ss = SparkSession.builder()
           .master("local[*]")
           .config("spark.sql.crossJoin.enabled", "true")
-          /*.enableHiveSupport()*/
+          .enableHiveSupport()
           .getOrCreate()
 
       } else {
@@ -254,10 +336,10 @@ object SparkBigData {
           .appName("Application Spark")
           .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
           .config("spark.sql.crossJoin.enabled", "true")
-          /*.enableHiveSupport()*/
+          .enableHiveSupport()
           .getOrCreate()
-      }
-     /*catch {
+      }/*
+     catch {
       case ex: java.io.FileNotFoundException => trace_log.error("Nous n'avons pas trouvé winutils dans le schéma indiqué" + ex.printStacktrace())
       case ex: Exception => trace_log.error("Erreur dans l'initialisation de la session Spark" + ex.printStackTrace())
     }*/
