@@ -8,13 +8,7 @@ import org.apache.hadoop.conf.Configuration
 //import org.datanucleus.store.types.backed._
 import java.util._
 
-object SparkSQL {<!-- https://mvnrepository.com/artifact/mysql/mysql-connector-java -->
-  <dependency>
-    <groupId>mysql</groupId>
-    <artifactId>mysql-connector-java</artifactId>
-    <version>8.0.27</version>
-  </dependency>
-
+object SparkSQL {
 
   def main(arg: Array[String]): Unit = {
     val ss = Session_Spark(true)
